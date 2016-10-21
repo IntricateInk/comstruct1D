@@ -1,0 +1,78 @@
+module mojo_top (
+    input clk,              // 50MHz clock
+    input rst_n,            // reset button (active low) 
+    
+    input io_dip[3][8],      // DIP Switches on IO Shield
+    output io_led[3][8],           // LED display for switch
+    output io_seg[8]
+    // a = io_dip[2][7:0]
+    // b = io_dip[1][7:0]
+    // ALUFN = io_dip[0][7:2]
+  ) {
+  
+  sig rst;                  // reset signal
+  
+  .clk(clk) {
+    // The reset conditioner is used to synchronize the reset signal to the FPGA
+    // clock. This ensures the entire FPGA comes out of reset at the same time.
+    reset_conditioner reset_cond;
+  }
+  
+  // instantiate alu, slow clock and d flip-flop
+  alu alu;
+  tester tester(.clk(clk), .rst(rst));
+  slowclock slowclk(.clk(clk), .rst(rst));
+  segment seg0;
+  dff c[16](.clk(clk), .rst(rst));
+  
+  always {
+    reset_cond.in = ~rst_n; // input raw inverted reset signal
+    rst = reset_cond.out;   // conditioned reset
+    
+    seg0.char = tester.testcase;
+    tester.i = slowclk.out;
+    
+    io_seg = ~seg0.segs;
+    
+    case(io_dip[0][7:6]){
+      2b00:
+        alu.a = io_dip[2];
+        alu.b = io_dip[1];
+        alu.alufn = io_dip[0][5:0];
+        
+        io_led[1] = io_dip[1];
+        io_led[2] = io_dip[2];
+        
+      2b10:
+        alu.a = c.q[0+:8];
+        alu.b = c.q[8+:8];
+        alu.alufn = io_dip[0][5:0];
+        
+        io_led[1] = c.q[8+:8];
+        io_led[2] = c.q[0+:8];
+      
+      2b01:
+        alu.a = tester.a;
+        alu.b = tester.b;
+        alu.alufn = tester.alufn;
+        
+        io_led[1] = tester.b;
+        io_led[2] = tester.a;
+    
+      default:
+        alu.a = 0;
+        alu.b = 0;
+        alu.alufn = 0;
+        
+        io_led[1] = 0;
+        io_led[2] = 0;
+      
+    }
+    
+    c.d = c.q + slowclk.out;
+
+    // set output to alu result
+    io_led[0] = alu.result;
+    
+  }
+}
